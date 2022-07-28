@@ -45,84 +45,75 @@ def filterImg(img, lower=(0, 0, 0), upper=(179, 255, 255)):
     return cv2.cvtColor(filtered_img, cv2.COLOR_HSV2RGB)
 
 
-def getCornerstones(maze_img):
-    maze_hsv = cv2.cvtColor(maze_img, cv2.COLOR_RGB2HSV)
+def getBinaryImg(img, lower_threshold, upper_threshold):
+    (_, binary_img) = cv2.threshold(img, lower_threshold, upper_threshold, cv2.THRESH_BINARY)
+    return binary_img
 
-    cyan_thresh_lower = (89, 230, 230)
-    cyan_thresh_upper = (90, 255, 255)
 
-    maze_cyan = filterImg(maze_hsv, lower=cyan_thresh_lower, upper=cyan_thresh_upper)
-    maze_cyan_gray = cv2.cvtColor(maze_cyan, cv2.COLOR_RGB2GRAY)
-
-    magenta_thresh_lower = (140, 230, 230)
-    magenta_thresh_upper = (160, 255, 255)
-
-    maze_magenta = filterImg(maze_hsv, lower=magenta_thresh_lower, upper=magenta_thresh_upper)
-    maze_magenta_gray = cv2.cvtColor(maze_magenta, cv2.COLOR_RGB2GRAY)
+def getColorContours(maze_hsv, lower_threshold, upper_threshold):
+    maze_filtered = filterImg(maze_hsv, lower=lower_threshold, upper=upper_threshold)
+    maze_filtered_gray = cv2.cvtColor(maze_filtered, cv2.COLOR_RGB2GRAY)
 
     kernel = np.ones((8, 8), np.uint8)
+    maze_filtered_gray_closed = cv2.morphologyEx(maze_filtered_gray, cv2.MORPH_CLOSE, kernel)
 
-    circle_accumulation = 0.8
-    circle_min_dist = 50
-    circle_param_1 = 5
-    circle_param_2 = 10
-    circle_min_radius = 3
-    circle_max_radius = 15
-
-    cornerstone_points = []
-    cornerstone_radii = []
-
-    maze_magenta_gray_closed = cv2.morphologyEx(maze_magenta_gray, cv2.MORPH_CLOSE, kernel)
-
-    magenta_circles = cv2.HoughCircles(maze_magenta_gray_closed,
-                                       cv2.HOUGH_GRADIENT,
-                                       circle_accumulation,
-                                       circle_min_dist,
-                                       param1=circle_param_1,
-                                       param2=circle_param_2,
-                                       minRadius=circle_min_radius,
-                                       maxRadius=circle_max_radius)
-
-    if magenta_circles is None:
-        print("Couldn't find any magenta circles")
-    elif not len(magenta_circles[0]) == 1:
-        print(f"Expected 1 magenta circle, found {len(magenta_circles)}")
-    else:
-        cornerstone_points.append((magenta_circles[0][0][0], magenta_circles[0][0][1]))
-        cornerstone_radii.append(magenta_circles[0][0][2])
-
-    maze_cyan_gray_closed = cv2.morphologyEx(maze_cyan_gray, cv2.MORPH_CLOSE, kernel)
-
-    cyan_circles = cv2.HoughCircles(maze_cyan_gray_closed,
-                                    cv2.HOUGH_GRADIENT,
-                                    circle_accumulation,
-                                    circle_min_dist,
-                                    param1=circle_param_1,
-                                    param2=circle_param_2,
-                                    minRadius=circle_min_radius,
-                                    maxRadius=circle_max_radius)
-
-    if cyan_circles is None:
-        print("Couldn't find any cyan circles")
-    elif not len(cyan_circles[0]) == 3:
-        print(f"Expected 3 cyan circles, found {len(cyan_circles)}")
-    else:
-        for circle in cyan_circles[0]:
-            cornerstone_points.append((circle[0], circle[1]))
-            cornerstone_radii.append(circle[2])
+    filtered_binary = getBinaryImg(maze_filtered_gray_closed, 50, 255)
 
     if DEBUG:
-        showImg(maze_cyan, "Cyan filtered maze")
-        showImg(cv2.cvtColor(maze_cyan_gray, cv2.COLOR_GRAY2RGB), "Cyan filtered maze, grayscale")
-        showImg(cv2.cvtColor(maze_cyan_gray_closed, cv2.COLOR_GRAY2RGB), "Cyan filtered maze, grayscale, closed")
-        showImg(maze_magenta, "Magenta filtered maze")
-        showImg(cv2.cvtColor(maze_magenta_gray, cv2.COLOR_GRAY2RGB), "Magenta filtered maze, grayscale")
-        showImg(cv2.cvtColor(maze_magenta_gray_closed, cv2.COLOR_GRAY2RGB), "Magenta filtered maze, grayscale, closed")
+        showImg(maze_filtered, "Filtered maze")
+        showImg(cv2.cvtColor(maze_filtered_gray, cv2.COLOR_GRAY2RGB), "Filtered maze, grayscale")
+        showImg(cv2.cvtColor(maze_filtered_gray_closed, cv2.COLOR_GRAY2RGB), "Filtered maze, grayscale, closed")
+        showImg(cv2.cvtColor(filtered_binary, cv2.COLOR_GRAY2RGB), "Filtered binary image")
 
-    return (cornerstone_points, cornerstone_radii)
+    _, contours, _ = cv2.findContours(filtered_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    return contours
 
 
-def markCornerstones(maze_rgb, cornerstone_points, cornerstone_radii):
+def getLargestContours(contours, num_contours):
+    largestContours = [None] * num_contours
+
+
+
+    return tuple(largestContours)
+
+
+def getCornerstones(maze_hsv):
+
+    magenta_thresh_lower = (140, 200, 180)
+    magenta_thresh_upper = (160, 255, 255)
+
+    cyan_thresh_lower = (80, 200, 180)
+    cyan_thresh_upper = (100, 255, 255)
+
+    magenta_contours = getColorContours(maze_hsv, magenta_thresh_lower, magenta_thresh_upper)
+    cyan_contours = getColorContours(maze_hsv, cyan_thresh_lower, cyan_thresh_upper)
+
+    cornerstone_bounds = []
+
+    if not len(magenta_contours) == 1:
+        print(f"Expected 1 magenta circle, found {len(magenta_contours)}")
+    else:
+        contour_poly = cv2.approxPolyDP(magenta_contours[0], 3, True)
+        bounds = cv2.boundingRect(contour_poly)
+        cornerstone_bounds.append(bounds)
+
+    if not len(cyan_contours) == 3:
+        print(f"Expected 3 cyan circles, found {len(cyan_contours)}")
+    else:
+        for i, contour in enumerate(cyan_contours):
+            contour_poly = cv2.approxPolyDP(contour, 3, True)
+            bounds = cv2.boundingRect(contour_poly)
+            cornerstone_bounds.append(bounds)
+
+    cornerstone_ellipses = tuple(tuple((bound[0] + bound[2] / 2,
+                                        bound[1] + bound[3] / 2,
+                                        bound[2] / 2,
+                                        bound[3] / 2)) for bound in cornerstone_bounds)
+
+    return tuple(cornerstone_ellipses)
+
+
+def markCornerstones(maze_rgb, cornerstone_ellipses):
     cyan_rgb = (0, 255, 255)
     magenta_rgb = (255, 0, 255)
 
@@ -136,11 +127,21 @@ def markCornerstones(maze_rgb, cornerstone_points, cornerstone_radii):
         if i > 0:
             mark_color = magenta_rgb
 
-        point = cornerstone_points[i]
+        ellipse = cornerstone_ellipses[i]
+        ellipse_center = tuple((int(ellipse[0]), int(ellipse[1])))
+        ellipse_axes = tuple((int(ellipse[2]), int(ellipse[3])))
 
-        cv2.circle(marked_img, (point[0], point[1]), cornerstone_radii[i], mark_color, 3)
+        cv2.ellipse(marked_img,
+                    ellipse_center,
+                    ellipse_axes,
+                    0,
+                    0,
+                    360,
+                    mark_color,
+                    3)
 
     return marked_img
+
 
 def getOverheadPerspective(maze_img, cornerstone_points):
     transformed_points = np.float32(((MAZE_IMAGE_WIDTH, MAZE_IMAGE_HEIGHT),
@@ -157,17 +158,75 @@ def getOverheadPerspective(maze_img, cornerstone_points):
     return cv2.warpPerspective(maze_img, H, (MAZE_IMAGE_WIDTH, MAZE_IMAGE_HEIGHT))
 
 
+def getWalls(maze_hsv):
+    wall_thresh_lower = (10, 85, 228)
+    wall_thresh_upper = (25, 120, 255)
+
+    maze_filtered = filterImg(maze_hsv, lower=wall_thresh_lower, upper=wall_thresh_upper)
+    maze_filtered_gray = cv2.cvtColor(maze_filtered, cv2.COLOR_RGB2GRAY)
+
+    # kernel = np.ones((8, 8), np.uint8)
+    # maze_filtered_gray_closed = cv2.morphologyEx(maze_filtered_gray, cv2.MORPH_CLOSE, kernel)
+
+    filtered_binary = cv2.threshold(maze_filtered_gray, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1] #getBinaryImg(maze_filtered_gray_closed, 200, 255)
+
+    # kernel = np.ones((30, 30), np.uint8)
+    # filtered_binary_closed = cv2.morphologyEx(filtered_binary, cv2.MORPH_CLOSE, kernel)
+
+    low_threshold = 50
+    high_threshold = 150
+    edges = cv2.Canny(filtered_binary, low_threshold, high_threshold)
+
+    print(edges)
+
+    rho = 1  # distance resolution in pixels of the Hough grid
+    theta = 0.1  # angular resolution in radians of the Hough grid
+    threshold = 15  # minimum number of votes (intersections in Hough grid cell)
+    min_line_length = 20  # minimum number of pixels making up a line
+    max_line_gap = 20  # maximum gap in pixels between connectable line segments
+    line_image = np.copy(maze_hsv) * 0  # creating a blank to draw lines on
+
+    # Run Hough on edge detected image
+    # Output "lines" is an array containing endpoints of detected line segments
+    lines = cv2.HoughLinesP(edges, rho, theta, threshold, np.array([]),
+                            min_line_length, max_line_gap)
+
+    if lines is not None:
+        for line in lines:
+            for x1, y1, x2, y2 in line:
+                cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 5)
+
+    lines_edges = cv2.addWeighted(cv2.cvtColor(maze_hsv, cv2.COLOR_HSV2RGB), 0.8, line_image, 1, 0)
+
+    if DEBUG:
+        showImg(maze_filtered, "Filtered maze")
+        showImg(cv2.cvtColor(maze_filtered_gray, cv2.COLOR_GRAY2RGB), "Filtered maze, grayscale")
+        # showImg(cv2.cvtColor(maze_filtered_gray_closed, cv2.COLOR_GRAY2RGB), "Filtered maze, grayscale, closed")
+        showImg(cv2.cvtColor(filtered_binary, cv2.COLOR_GRAY2RGB), "Filtered binary image")
+        # showImg(cv2.cvtColor(filtered_binary_closed, cv2.COLOR_GRAY2RGB), "Filtered binary image, closed")
+        showImg(lines_edges, "Maze with walls marked")
+
+    # _, contours, _ = cv2.findContours(filtered_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # return contours
+
+
 if __name__ == "__main__":
     maze_bgr = cv2.imread(MAZE_FILE_NAME)
     maze_rgb = cv2.cvtColor(maze_bgr, cv2.COLOR_BGR2RGB)
 
     showImg(maze_rgb, "Maze in RGB mode")
 
-    (cornerstone_points, cornerstone_radii) = getCornerstones(maze_rgb)
+    maze_hsv = cv2.cvtColor(maze_rgb, cv2.COLOR_RGB2HSV)
 
-    cornerstone_img = markCornerstones(maze_rgb, cornerstone_points, cornerstone_radii)
+    # cornerstone_bounds = getCornerstones(maze_hsv)
+    #
+    # cornerstone_img = markCornerstones(maze_rgb, cornerstone_bounds)
+    #
+    # showImg(cornerstone_img, "Maze with cornerstones marked")
+    #
+    # cornerstone_points = ((bound[0], bound[1]) for bound in cornerstone_bounds)
 
-    showImg(cornerstone_img, "Maze with cornerstones marked")
+    getWalls(maze_hsv)
 
     # maze_overhead = getOverheadPerspective(maze_rgb, cornerstone_points)
 
