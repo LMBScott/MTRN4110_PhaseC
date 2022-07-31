@@ -4,8 +4,8 @@ import numpy as np
 from enum import Enum
 
 DEBUG = False
-MAZE_FILE_NAME = "../Maze_2.png"
-ROBOT_FILE_NAME = "../Robot_2.png"
+MAZE_FILE_NAME = "../Maze_3.png"
+ROBOT_FILE_NAME = "../Robot_3.png"
 IMAGE_LADYBUG_FILE_NAME = "../Ladybug_small.png"
 MAP_FILE_NAME = "../MapBuilt.png"
 MAZE_IMAGE_WIDTH_RATIO = 9
@@ -345,6 +345,7 @@ def markTarget(maze_rgb, target_circle):
 
 
 def getRobotDirection(robot_rgb, homography_rotation):
+    # Scan the marker on the closeup image of the robot to locate its corner points
     aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_250)
     parameters = cv2.aruco_DetectorParameters.create()
 
@@ -354,25 +355,17 @@ def getRobotDirection(robot_rgb, homography_rotation):
     front_corner = tuple(corners[0][0][0])
 
     # Find robot's center by getting the average x and y coords of the marker corners
-    robot_center_x = sum(corner[0] for corner in corners[0][0]) * 0.25
-    robot_center_y = sum(corner[1] for corner in corners[0][0]) * 0.25
-    robot_center = tuple((robot_center_x, robot_center_y))
+    marker_center_x = sum(corner[0] for corner in corners[0][0]) * 0.25
+    marker_center_y = sum(corner[1] for corner in corners[0][0]) * 0.25
+    marker_center = tuple((marker_center_x, marker_center_y))
 
     # The rotation of the front of the robot from due East, in radians
-    front_angle = np.arctan2(robot_center[1] - front_corner[1], front_corner[0] - robot_center[0])
-
-    if DEBUG:
-        robot_marker = robot_rgb.copy()
-        cv2.circle(robot_marker, (int(front_corner[0]), int(front_corner[1])), 5, (0, 255, 0), -1)
-        cv2.circle(robot_marker, (int(robot_center[0]), int(robot_center[1])), 5, (255, 0, 0), -1)
-        showImg(robot_marker, "Robot with marker center and front marked")
-        print(corners)
-        print(f"Front corner: {front_corner}")
-        print(f"Robot center: {robot_center}")
-        print(f"Homography rotation: {homography_rotation}")
-        print(f"Front angle: {front_angle}")
+    front_angle = np.arctan2(marker_center[1] - front_corner[1], front_corner[0] - marker_center[0])
 
     two_pi = 2 * np.pi
+
+    if front_angle < 0:
+        front_angle = two_pi + front_angle
     # Get angle of robot front in transformed maze image, bounded between zero and two pi radians
     transformed_front_angle = (front_angle + homography_rotation) % two_pi
 
@@ -381,12 +374,27 @@ def getRobotDirection(robot_rgb, homography_rotation):
 
     # Determine actual robot direction based on transformed front angle
     # Split rotation space 0 -> 2 * pi into four quadrants
-    if pi_on_four <= transformed_front_angle < 3 * pi_on_four:
+    if transformed_front_angle < pi_on_four:
+        direction = Direction.EAST
+    elif transformed_front_angle < 3 * pi_on_four:
         direction = Direction.NORTH
     elif transformed_front_angle < 5 * pi_on_four:
         direction = Direction.WEST
     elif transformed_front_angle < 7 * pi_on_four:
         direction = Direction.SOUTH
+
+    if True:
+        robot_marker = robot_rgb.copy()
+        cv2.circle(robot_marker, (int(front_corner[0]), int(front_corner[1])), 5, (0, 255, 0), -1)
+        cv2.circle(robot_marker, (int(marker_center[0]), int(marker_center[1])), 5, (255, 0, 0), -1)
+        showImg(robot_marker, "Robot with marker center and front marked")
+        print(corners)
+        print(f"Front corner: {front_corner}")
+        print(f"Robot center: {marker_center}")
+        print(f"Homography rotation: {homography_rotation}")
+        print(f"Front angle: {front_angle}")
+        print(f"Transformed front angle: {transformed_front_angle}")
+        print(direction)
 
     return direction
 
@@ -444,7 +452,7 @@ def getMatchCenter(query_img, train_img):
                                     None,
                                     flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 
-        showImg(match_img, "Maze and robot, feature-matched")
+        showImg(match_img, "Maze and object, feature-matched")
 
     for match in matches[0:num_best_matches]:
         maze_img_index = match.trainIdx
