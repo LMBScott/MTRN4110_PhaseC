@@ -1,5 +1,3 @@
-import math
-
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
@@ -175,7 +173,7 @@ def getPointRegionIndex(point, regions):
     return -1
 
 
-def getOverheadPerspective(maze_img, cornerstone_points):
+def getHomographyMatrix(cornerstone_points):
     transformed_points = np.float32(((0, 0),                                  # Top left corner
                                      (MAZE_IMAGE_WIDTH, 0),                   # Top right corner
                                      (0, MAZE_IMAGE_HEIGHT),                  # Bottom left corner
@@ -207,9 +205,7 @@ def getOverheadPerspective(maze_img, cornerstone_points):
         region_index = getPointRegionIndex(cornerstone_points[i], cornerstone_regions)
         ordered_corner_points[region_map[region_index]] = np.float32(cornerstone_points[i])
 
-    homography_matrix = cv2.getPerspectiveTransform(ordered_corner_points, transformed_points)
-
-    return cv2.warpPerspective(maze_img, homography_matrix, (MAZE_IMAGE_WIDTH, MAZE_IMAGE_HEIGHT))
+    return cv2.getPerspectiveTransform(ordered_corner_points, transformed_points)
 
 
 def getWalls(maze_hsv):
@@ -305,6 +301,48 @@ def detectMarker(robot_rgb):
     showImg(robot_rgb, "Robot with corner marked")
 
 
+def findRobot(maze_rgb, target_rgb):
+    # Apply an HSV threshold to filter the image for red regions
+    maze_hsv = cv2.cvtColor(maze_rgb, cv2.COLOR_RGB2HSV)
+    maze_filtered = filterImg(maze_hsv, lower=(80, 110, 150), upper=(90, 130, 170))
+
+    # Convert filtered image to grayscale, then dilate the filtered regions to ensure that
+    # The entire target image is visible
+    maze_filtered_gray = cv2.cvtColor(maze_filtered, cv2.COLOR_RGB2GRAY)
+    kernel = np.ones((80, 80), np.uint8)
+    maze_filtered_gray_dilated = cv2.morphologyEx(maze_filtered_gray, cv2.MORPH_DILATE, kernel)
+
+    # Convert filtered, dilated image to a binary mask
+    mask = getBinaryImg(maze_filtered_gray_dilated, 50, 255)
+
+    # Apply the mask to the original image to cover regions that don't contain the target
+    maze_masked = cv2.bitwise_and(maze_rgb, maze_rgb, mask=mask)
+    showImg(maze_masked, "masked maze for target matching")
+
+    # Apply pattern matching with the sample target image to the masked image to find the target
+    match_result = cv2.matchTemplate(maze_masked, target_rgb, cv2.TM_CCORR_NORMED)
+    _, _, _, loc = cv2.minMaxLoc(match_result)
+
+    # Calculate the center point and radius of the target in the image
+    half_target_width = int(target_rgb.shape[0] / 2)
+    center_x = int(loc[0]) + half_target_width
+    center_y = int(loc[1]) + half_target_width
+
+    return tuple((center_x, center_y, int(half_target_width / 2)))
+
+
+def markRobot(maze_rgb, target_circle):
+    maze_robot_marked = maze_rgb.copy()
+    cv2.circle(maze_robot_marked, target_circle[0:2], target_circle[2], (255, 0, 0), 2)
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    text_size = cv2.getTextSize('V', font, 1, 2)[0]
+    text_origin = (target_circle[0] - int(text_size[0] / 2), target_circle[1] + int(text_size[1] / 2))
+    cv2.putText(maze_robot_marked, 'V', text_origin, font, 1, (255, 0, 0), 2, cv2.LINE_AA)
+
+    return maze_robot_marked
+
+
 if __name__ == "__main__":
     maze_bgr = cv2.imread(MAZE_FILE_NAME)
     maze_rgb = cv2.cvtColor(maze_bgr, cv2.COLOR_BGR2RGB)
@@ -321,7 +359,9 @@ if __name__ == "__main__":
 
     cornerstone_points = tuple((bound[0], bound[1]) for bound in cornerstone_bounds)
 
-    maze_overhead = getOverheadPerspective(maze_rgb, cornerstone_points)
+    homography_matrix = getHomographyMatrix(cornerstone_points)
+
+    maze_overhead = cv2.warpPerspective(maze_rgb, homography_matrix, (MAZE_IMAGE_WIDTH, MAZE_IMAGE_HEIGHT))
 
     showImg(maze_overhead, "Maze from overhead perspective")
 
@@ -344,3 +384,8 @@ if __name__ == "__main__":
     robot_rgb = cv2.cvtColor(robot_bgr, cv2.COLOR_BGR2RGB)
 
     detectMarker(robot_rgb)
+
+    robot_circle = findRobot(maze_overhead, target_rgb)
+
+    maze_robot_marked = markRobot(maze_target_marked, robot_circle)
+    showImg(maze_robot_marked, "Maze with robot marked")
